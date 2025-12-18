@@ -1,3 +1,4 @@
+import json
 import os
 import requests
 from dotenv import load_dotenv
@@ -7,6 +8,8 @@ APP_ID = os.getenv("APP_ID")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 # Run this script once locally to register the commands with Discord.
+# Optional: URL = f"https://discord.com/api/v10/applications/{APP_ID}/guilds/{GUILD_ID}/commands"
+# in order to get instant updates to my specific server.
 URL = f"https://discord.com/api/v10/applications/{APP_ID}/commands"
 
 commands_payload = [
@@ -38,6 +41,6 @@ commands_payload = [
     },
 ]
 
-headers = {"Authorization": f"Bot {BOT_TOKEN}"}
-r = requests.post(URL, headers=headers, json=json.loads(commands_payload))
+headers = {"Authorization": f"Bot {BOT_TOKEN}", "Content-Type": "application/json"}
+r = requests.put(URL, headers=headers, json=commands_payload)
 print(r.status_code, r.text)
