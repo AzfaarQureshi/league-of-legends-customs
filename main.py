@@ -1,4 +1,4 @@
-import interactinos.create_teams as create_teams
+import interactions.create_teams as create_teams
 import os
 
 from flask import Flask, jsonify, request
