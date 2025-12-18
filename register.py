@@ -6,9 +6,11 @@ from dotenv import load_dotenv
 load_dotenv()
 APP_ID = os.getenv("APP_ID")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+GUILD_ID = os.getenv("GUILD_ID")
 
 # Run this script once locally to register the commands with Discord.
-# Optional: URL = f"https://discord.com/api/v10/applications/{APP_ID}/guilds/{GUILD_ID}/commands"
+# Optional:
+# URL = f"https://discord.com/api/v10/applications/{APP_ID}/guilds/{GUILD_ID}/commands"
 # in order to get instant updates to my specific server.
 URL = f"https://discord.com/api/v10/applications/{APP_ID}/commands"
 
