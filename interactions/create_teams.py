@@ -1,4 +1,5 @@
 from discord_interactions import InteractionResponseType
+from flask import jsonify
 
 
 def run(interaction_data):
