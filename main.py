@@ -1,4 +1,6 @@
+import create_teams
 import os
+
 from flask import Flask, jsonify, request
 from discord_interactions import (
     verify_key_decorator,
@@ -34,6 +36,8 @@ def interactions():
                     },
                 }
             )
+        elif command_name == "create_teams":
+            return create_teams.run(interaction.get("data"))
 
     return jsonify({"error": "Unhandled request type"}), 400
 
