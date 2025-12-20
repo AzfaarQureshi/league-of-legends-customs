@@ -6,7 +6,7 @@ from discord_interactions import InteractionResponseType
 from flask import jsonify
 
 
-Role = Enum("TOP", "JG", "MID", "ADC", "SUP")
+Role = Enum("Role", ["TOP", "JG", "MID", "ADC", "SUP"])
 
 
 class Player:
