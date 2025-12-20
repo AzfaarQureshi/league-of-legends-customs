@@ -17,13 +17,13 @@ URL = f"https://discord.com/api/v10/applications/{APP_ID}/commands"
 commands_payload = [
     {
         "name": "create_teams",
-        "description": "Upload a roster screenshot to generate balanced teams",
+        "description": "Attach the roster ts JSON to generate balanced teams",
         "type": 1,
         "options": [
             {
-                "name": "roster_screenshot",
-                "description": "The screenshot containing player names/ranks",
-                "type": 11,  # Type 11 is for ATTACHMENTS
+                "name": "roster_json",
+                "description": "JSON containing player names/ranks",
+                "type": 3,  # Type 3 is for STRING
                 "required": True,
             }
         ],
