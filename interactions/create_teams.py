@@ -3,7 +3,10 @@ import requests
 import itertools
 from google.cloud import firestore
 
-db = firestore.Client()
+try:
+    db = firestore.Client()
+except Exception as e:
+    print(f"Firestore Initialization Error: {e}")
 
 # Weighted MMR based on real-world distribution (approx. top % per rank)
 # Note the +400 jump for Diamond to reflect the 2.5% vs 10% curve
