@@ -20,6 +20,9 @@ RANK_MMR_DEFAULTS = {
     "CHALLENGER": 3600,
 }
 
+# Division weighting (75 MMR spread per tier)
+DIVISION_OFFSET = {"1": 75, "2": 50, "3": 25, "4": 0}
+
 # Role Penalties (Applied to Base MMR)
 ROLE_PENALTY_MAP = {
     "PRIMARY": 0,
@@ -36,7 +39,6 @@ class Player:
         self.primary = primary.capitalize()
         self.secondary = secondary.capitalize()
         self.rank_str = rank.upper()
-        # Prioritize Database MMR over Seeded Rank MMR
         self.base_mmr = db_mmr if db_mmr else RANK_MMR_DEFAULTS.get(self.rank_str, 1200)
 
     def get_effective_stats(self, assigned_role):
@@ -52,7 +54,18 @@ class Player:
 def sync_players(roster_json):
     players = []
     for p in roster_json:
-        name = p["name"]
+        # Mapping new JSON keys
+        name = p.get("ign")
+        primary = p.get("primary role", "Fill")
+        secondary = p.get("secondary role", "Fill")
+
+        # Parse "Silver 1" into Tier and Division
+        rank_raw = p.get("rank", "Silver 4")
+        rank_parts = rank_raw.split()
+        rank_tier = rank_parts[0].upper()
+        # Default to division 4 if not specified (e.g. for Master+)
+        rank_div = rank_parts[1] if len(rank_parts) > 1 else "4"
+
         doc_ref = db.collection("players").document(name)
         doc = doc_ref.get()
 
@@ -61,19 +74,20 @@ def sync_players(roster_json):
             players.append(
                 Player(
                     name,
-                    p["primary"],
-                    p["secondary"],
-                    p["rank"],
+                    primary,
+                    secondary,
+                    rank_tier,
                     db_mmr=player_data.get("mmr"),
                 )
             )
         else:
-            # Seed new player
-            seed_mmr = RANK_MMR_DEFAULTS.get(p["rank"].upper(), 1200)
-            doc_ref.set({"name": name, "mmr": seed_mmr, "rank": p["rank"]})
-            players.append(
-                Player(name, p["primary"], p["secondary"], p["rank"], db_mmr=seed_mmr)
-            )
+            # Seed new player with Tier base + Division offset
+            base = RANK_MMR_DEFAULTS.get(rank_tier, 1200)
+            offset = DIVISION_OFFSET.get(rank_div, 0)
+            seed_mmr = base + offset
+
+            doc_ref.set({"name": name, "mmr": seed_mmr, "rank": rank_raw.upper()})
+            players.append(Player(name, primary, secondary, rank_tier, db_mmr=seed_mmr))
     return players
 
 
