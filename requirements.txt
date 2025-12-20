@@ -1,4 +1,4 @@
 flask
 discord-interactions
 gunicorn
-
+google-cloud-firestore

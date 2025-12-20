@@ -1,46 +1,42 @@
-import interactions.create_teams as create_teams
+import threading
+import requests
 import os
-
 from flask import Flask, jsonify, request
 from discord_interactions import (
     verify_key_decorator,
     InteractionType,
     InteractionResponseType,
 )
+import interactions.create_teams as create_teams
 
 PUBLIC_KEY = os.getenv("DISCORD_PUBLIC_KEY")
-
 app = Flask(__name__)
 
 
 @app.route("/", methods=["POST"])
 @verify_key_decorator(PUBLIC_KEY)
 def interactions():
-    # Get the interaction data
     interaction = request.json
 
-    # Handle the PING from Discord to verify the URL
     if interaction.get("type") == InteractionType.PING:
         return jsonify({"type": InteractionResponseType.PONG})
 
-    # Handle Slash Commands
     if interaction.get("type") == InteractionType.APPLICATION_COMMAND:
-        command_name = interaction.get("data", {}).get("name")
+        data = interaction.get("data", {})
+        command_name = data.get("name")
 
-        if command_name == "greet":
-            return jsonify(
-                {
-                    "type": InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-                    "data": {
-                        "content": "Hello! I am running on Google Cloud Run Functions. 🚀"
-                    },
-                }
+        if command_name == "create_teams":
+            # 1. Immediate ACK (Type 5: DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE)
+            # This prevents the 3-second timeout error
+            token = interaction.get("token")
+            application_id = interaction.get("application_id")
+
+            # 2. Spin up background thread for logic
+            thread = threading.Thread(
+                target=create_teams.run, args=(data, application_id, token)
             )
-        elif command_name == "create_teams":
-            return create_teams.run(interaction.get("data"))
+            thread.start()
+
+            return jsonify({"type": 5})
 
     return jsonify({"error": "Unhandled request type"}), 400
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
