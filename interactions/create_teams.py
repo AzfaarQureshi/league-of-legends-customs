@@ -94,100 +94,8 @@ def sync_players(roster_json):
     return players
 
 
-# def calculate_best_roles_for_team(team_players):
-#     """Permutes roles for 5 players to find the assignment that respects preferences most."""
-#     best_assignment = []
-#     best_pref_score = -9999
-
-#     for role_perm in itertools.permutations(ROLES):
-#         current_score = 0
-#         assignment = []
-#         for i, role in enumerate(role_perm):
-#             p = team_players[i]
-#             base, penalty, effective = p.get_effective_stats(role)
-#             # Preference Score weighting: Primary(10), Secondary(5), Off(0)
-#             score = 10 if role == p.primary else (5 if role == p.secondary else 0)
-#             current_score += score
-#             assignment.append(
-#                 {
-#                     "role": role,
-#                     "p": p,
-#                     "base": base,
-#                     "penalty": penalty,
-#                     "effective": effective,
-#                 }
-#             )
-
-#         if current_score > best_pref_score:
-#             best_pref_score = current_score
-#             best_assignment = assignment
-
-#     best_assignment.sort(key=lambda x: ROLES.index(x["role"]))
-#     total_mmr = sum(x["effective"] for x in best_assignment)
-#     return best_assignment, total_mmr
-
-
-# def run(interaction_data, app_id, token):
-#     try:
-#         options = interaction_data.get("options", [])
-#         roster_str = next(
-#             opt["value"] for opt in options if opt["name"] == "roster_json"
-#         )
-#         players = sync_players(json.loads(roster_str))
-
-#         all_matchups = []
-#         # Check all 252 unique ways to split 10 players into two teams
-#         for team_a_indices in itertools.combinations(range(10), 5):
-#             team_a_players = [players[i] for i in team_a_indices]
-#             team_b_players = [players[i] for i in range(10) if i not in team_a_indices]
-
-#             assign_a, total_a = calculate_best_roles_for_team(team_a_players)
-#             assign_b, total_b = calculate_best_roles_for_team(team_b_players)
-
-#             gap = abs(total_a - total_b)
-#             all_matchups.append(
-#                 {
-#                     "gap": gap,
-#                     "a": assign_a,
-#                     "total_a": total_a,
-#                     "b": assign_b,
-#                     "total_b": total_b,
-#                 }
-#             )
-
-#         # Get top 3 most balanced options
-#         all_matchups.sort(key=lambda x: x["gap"])
-#         top_3 = all_matchups[:3]
-
-#         # Format Response
-#         msg = "# 📖 TEAM ASSIGNMENTS\n"
-#         for i, opt in enumerate(top_3):
-#             msg += f"# ⚔️ OPTION {i+1} (MMR Gap: {int(opt['gap'])})\n"
-#             for label, team, total in [
-#                 ("Team A", opt["a"], opt["total_a"]),
-#                 ("Team B", opt["b"], opt["total_b"]),
-#             ]:
-#                 msg += f"**{label}**\n"
-#                 for item in team:
-#                     msg += f"- {item['role']}: {item['p'].name} ({item['p'].rank_str}) → {int(item['base'])} + ({int(item['penalty'])}) = **{int(item['effective'])}**\n"
-#                 msg += f"**{label} Total: {int(total)}**\n\n"
-#             msg += "---\n"
-
-#         # Patch the deferred message
-#         url = (
-#             f"https://discord.com/api/v10/webhooks/{app_id}/{token}/messages/@original"
-#         )
-#         requests.patch(url, json={"content": msg})
-
-#     except Exception as e:
-#         requests.patch(
-#             f"https://discord.com/api/v10/webhooks/{app_id}/{token}/messages/@original",
-#             json={"content": f"❌ Error: {str(e)}"},
-#         )
-
-
 def calculate_best_roles_for_team(team_players):
-    """Finds the single best role assignment for a specific set of 5 players."""
+    """Permutes roles for 5 players to find the assignment that respects preferences most."""
     best_assignment = []
     best_pref_score = -9999
 
@@ -197,6 +105,7 @@ def calculate_best_roles_for_team(team_players):
         for i, role in enumerate(role_perm):
             p = team_players[i]
             base, penalty, effective = p.get_effective_stats(role)
+            # Preference Score weighting: Primary(10), Secondary(5), Off(0)
             score = 10 if role == p.primary else (5 if role == p.secondary else 0)
             current_score += score
             assignment.append(
@@ -224,24 +133,11 @@ def run(interaction_data, app_id, token):
         roster_str = next(
             opt["value"] for opt in options if opt["name"] == "roster_json"
         )
-
-        data = clean_and_load_json(roster_str)
-        players = sync_players(data)
-
-        if len(players) < 10:
-            raise ValueError(
-                f"Found {len(players)} valid players, but 10 are required."
-            )
+        players = sync_players(json.loads(roster_str))
 
         all_matchups = []
-        # combinations(range(10), 5) gives 252 ways to pick Team A.
-        # This includes mirror matchups (picking 1,2,3,4,5 is same as picking 6,7,8,9,10).
+        # Check all 252 unique ways to split 10 players into two teams
         for team_a_indices in itertools.combinations(range(10), 5):
-            # DEDUPLICATION: We only process the matchup if the first player is on Team A.
-            # This cuts the 252 permutations to 126 unique player splits.
-            if 0 not in team_a_indices:
-                continue
-
             team_a_players = [players[i] for i in team_a_indices]
             team_b_players = [players[i] for i in range(10) if i not in team_a_indices]
 
@@ -259,10 +155,11 @@ def run(interaction_data, app_id, token):
                 }
             )
 
-        # Get top 3 most balanced splits
+        # Get top 3 most balanced options
         all_matchups.sort(key=lambda x: x["gap"])
         top_3 = all_matchups[:3]
 
+        # Format Response
         msg = "# 📖 TEAM ASSIGNMENTS\n"
         for i, opt in enumerate(top_3):
             msg += f"# ⚔️ OPTION {i+1} (MMR Gap: {int(opt['gap'])})\n"
@@ -272,17 +169,120 @@ def run(interaction_data, app_id, token):
             ]:
                 msg += f"**{label}**\n"
                 for item in team:
-                    msg += f"- {item['role']}: {item['p'].name} ({item['p'].rank_str}) → {int(item['effective'])} MMR\n"
-                msg += f"**Total: {int(total)}**\n\n"
+                    msg += f"- {item['role']}: {item['p'].name} ({item['p'].rank_str}) → {int(item['base'])} + ({int(item['penalty'])}) = **{int(item['effective'])}**\n"
+                msg += f"**{label} Total: {int(total)}**\n\n"
             msg += "---\n"
 
-        requests.patch(
-            f"https://discord.com/api/v10/webhooks/{app_id}/{token}/messages/@original",
-            json={"content": msg},
+        # Patch the deferred message
+        url = (
+            f"https://discord.com/api/v10/webhooks/{app_id}/{token}/messages/@original"
         )
+        requests.patch(url, json={"content": msg})
 
     except Exception as e:
         requests.patch(
             f"https://discord.com/api/v10/webhooks/{app_id}/{token}/messages/@original",
             json={"content": f"❌ Error: {str(e)}"},
         )
+
+
+# def calculate_best_roles_for_team(team_players):
+#     """Finds the single best role assignment for a specific set of 5 players."""
+#     best_assignment = []
+#     best_pref_score = -9999
+
+#     for role_perm in itertools.permutations(ROLES):
+#         current_score = 0
+#         assignment = []
+#         for i, role in enumerate(role_perm):
+#             p = team_players[i]
+#             base, penalty, effective = p.get_effective_stats(role)
+#             score = 10 if role == p.primary else (5 if role == p.secondary else 0)
+#             current_score += score
+#             assignment.append(
+#                 {
+#                     "role": role,
+#                     "p": p,
+#                     "base": base,
+#                     "penalty": penalty,
+#                     "effective": effective,
+#                 }
+#             )
+
+#         if current_score > best_pref_score:
+#             best_pref_score = current_score
+#             best_assignment = assignment
+
+#     best_assignment.sort(key=lambda x: ROLES.index(x["role"]))
+#     total_mmr = sum(x["effective"] for x in best_assignment)
+#     return best_assignment, total_mmr
+
+
+# def run(interaction_data, app_id, token):
+#     try:
+#         options = interaction_data.get("options", [])
+#         roster_str = next(
+#             opt["value"] for opt in options if opt["name"] == "roster_json"
+#         )
+
+#         data = clean_and_load_json(roster_str)
+#         players = sync_players(data)
+
+#         if len(players) < 10:
+#             raise ValueError(
+#                 f"Found {len(players)} valid players, but 10 are required."
+#             )
+
+#         all_matchups = []
+#         # combinations(range(10), 5) gives 252 ways to pick Team A.
+#         # This includes mirror matchups (picking 1,2,3,4,5 is same as picking 6,7,8,9,10).
+#         for team_a_indices in itertools.combinations(range(10), 5):
+#             # DEDUPLICATION: We only process the matchup if the first player is on Team A.
+#             # This cuts the 252 permutations to 126 unique player splits.
+#             if 0 not in team_a_indices:
+#                 continue
+
+#             team_a_players = [players[i] for i in team_a_indices]
+#             team_b_players = [players[i] for i in range(10) if i not in team_a_indices]
+
+#             assign_a, total_a = calculate_best_roles_for_team(team_a_players)
+#             assign_b, total_b = calculate_best_roles_for_team(team_b_players)
+
+#             gap = abs(total_a - total_b)
+#             all_matchups.append(
+#                 {
+#                     "gap": gap,
+#                     "a": assign_a,
+#                     "total_a": total_a,
+#                     "b": assign_b,
+#                     "total_b": total_b,
+#                 }
+#             )
+
+#         # Get top 3 most balanced splits
+#         all_matchups.sort(key=lambda x: x["gap"])
+#         top_3 = all_matchups[:3]
+
+#         msg = "# 📖 TEAM ASSIGNMENTS\n"
+#         for i, opt in enumerate(top_3):
+#             msg += f"# ⚔️ OPTION {i+1} (MMR Gap: {int(opt['gap'])})\n"
+#             for label, team, total in [
+#                 ("Team A", opt["a"], opt["total_a"]),
+#                 ("Team B", opt["b"], opt["total_b"]),
+#             ]:
+#                 msg += f"**{label}**\n"
+#                 for item in team:
+#                     msg += f"- {item['role']}: {item['p'].name} ({item['p'].rank_str}) → {int(item['effective'])} MMR\n"
+#                 msg += f"**Total: {int(total)}**\n\n"
+#             msg += "---\n"
+
+#         requests.patch(
+#             f"https://discord.com/api/v10/webhooks/{app_id}/{token}/messages/@original",
+#             json={"content": msg},
+#         )
+
+#     except Exception as e:
+#         requests.patch(
+#             f"https://discord.com/api/v10/webhooks/{app_id}/{token}/messages/@original",
+#             json={"content": f"❌ Error: {str(e)}"},
+#         )
