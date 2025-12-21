@@ -17,10 +17,10 @@ RANK_MMR_DEFAULTS = {
     "GOLD": 1500,  # Top 40%
     "PLATINUM": 1800,  # Top 25%
     "EMERALD": 2100,  # Top 10%
-    "DIAMOND": 2550,  # Top 2.5% (The requested "Much Better" jump)
-    "MASTER": 3000,  # Top 0.5%
-    "GRANDMASTER": 3300,
-    "CHALLENGER": 3600,
+    "DIAMOND": 2550,  # Top 2.5% 
+    "MASTER": 3500,  # Top 0.5%
+    "GRANDMASTER": 4300,
+    "CHALLENGER": 5600,
 }
 
 # Division weighting (75 MMR spread per tier)
@@ -29,8 +29,8 @@ DIVISION_OFFSET = {"1": 75, "2": 50, "3": 25, "4": 0}
 # Role Penalties (Applied to Base MMR)
 ROLE_PENALTY_MAP = {
     "PRIMARY": 0,
-    "SECONDARY": -150,  # Skill drop when on 2nd choice
-    "OFFROLE": -350,  # Significant penalty for off-role
+    "SECONDARY": -250,  # Skill drop when on 2nd choice
+    "OFFROLE": -600,  # Significant penalty for off-role
 }
 
 ROLES = ["Top", "Jungle", "Mid", "ADC", "Support"]
@@ -105,8 +105,13 @@ def calculate_best_roles_for_team(team_players):
         for i, role in enumerate(role_perm):
             p = team_players[i]
             base, penalty, effective = p.get_effective_stats(role)
-            # Preference Score weighting: Primary(10), Secondary(5), Off(0)
-            score = 10 if role == p.primary else (5 if role == p.secondary else 0)
+            score = 0
+            if role == p.primary:
+                score = 50  # Heavy weight for Primary
+            elif role == p.secondary:
+                score = 15  # Medium weight for Secondary
+            else:
+                score = -100 # Heavy penalty for forcing an Off-role
             current_score += score
             assignment.append(
                 {
@@ -126,7 +131,6 @@ def calculate_best_roles_for_team(team_players):
     total_mmr = sum(x["effective"] for x in best_assignment)
     return best_assignment, total_mmr
 
-
 def run(interaction_data, app_id, token):
     try:
         options = interaction_data.get("options", [])
@@ -139,31 +143,38 @@ def run(interaction_data, app_id, token):
             raise ValueError("Roster must contain exactly 10 players.")
 
         all_matchups = []
-
-        # ANCHOR METHOD:
-        # Fix the first player (index 0) to Team A.
-        # Then, pick 4 more players from the remaining 9 to join them.
-        # This results in exactly 126 unique 5v5 splits (10C5 / 2).
         first_player = players[0]
         remaining_indices = range(1, 10)
 
         for combo in itertools.combinations(remaining_indices, 4):
-            # Team A is Player 0 + the 4 players picked in the combo
             team_a_players = [first_player] + [players[i] for i in combo]
-
-            # Team B is everyone else
             team_a_indices_set = set([0] + list(combo))
             team_b_players = [
                 players[i] for i in range(10) if i not in team_a_indices_set
             ]
 
+            # Get assignments and the pref scores used to pick them
             assign_a, total_a = calculate_best_roles_for_team(team_a_players)
             assign_b, total_b = calculate_best_roles_for_team(team_b_players)
+            
+            # Sum of preference scores for both teams (higher is better)
+            # You would need to return the score from calculate_best_roles_for_team
+            # For now, we calculate it here based on the chosen assignment
+            def get_p_score(assign):
+                score = 0
+                for item in assign:
+                    if item['role'] == item['p'].primary: score += 10
+                    elif item['role'] == item['p'].secondary: score += 5
+                    else: score -= 20 # Heavy penalty for off-role in the selection rank
+                return score
 
+            matchup_pref_score = get_p_score(assign_a) + get_p_score(assign_b)
             gap = abs(total_a - total_b)
+            
             all_matchups.append(
                 {
                     "gap": gap,
+                    "pref_score": matchup_pref_score,
                     "a": assign_a,
                     "total_a": total_a,
                     "b": assign_b,
@@ -171,34 +182,24 @@ def run(interaction_data, app_id, token):
                 }
             )
 
-        # Sort by smallest MMR gap
-        all_matchups.sort(key=lambda x: x["gap"])
+        # SORTING LOGIC: 
+        # Primary: Highest Preference Score (Role satisfaction)
+        # Secondary: Lowest MMR Gap (Balance)
+        all_matchups.sort(key=lambda x: (-x["pref_score"], x["gap"]))
 
-        # Because every entry is now a unique personnel split,
-        # the top 3 are guaranteed to have different people on each team.
-        top_3 = all_matchups[:2]
-        emojis = ["⚔️", "🛡️", "🏹"]
+        best = all_matchups[0]
+
         msg = "# 📖 TEAM ASSIGNMENTS\n"
-        for i, opt in enumerate(top_3):
-            msg += f"## {emojis[i]} Option {i+1} **Gap: {int(opt['gap'])}**\n"
+        msg += f"## ⚔️ Option 1 **Gap: {int(best['gap'])}**\n"
+        
+        for label, team, total in [("Team A", best["a"], best["total_a"]), 
+                                   ("Team B", best["b"], best["total_b"])]:
+            msg += f"**{label}**\n"
+            for item in team:
+                msg += f"- {item['role']}: {item['p'].name} ({item['p'].rank_str}) → {int(item['base'])} + {int(item['penalty'])} = {int(item['effective'])}\n"
+            msg += f"\n**{label} Total: {int(total)}**\n\n"
 
-            # Team A Section
-            msg += "**Team 1**\n"
-            for item in opt['a']:
-                msg += f"- {item['role']}: {item['p'].name} ({item['p'].rank_str}) → {int(item['base'])} + ({int(item['penalty'])}) = **{int(item['effective'])}**\n"
-            msg += f"\n**Team 1 Total: {int(opt['total_a'])}**\n\n"
-
-            # Team B Section
-            msg += "**Team 2**\n"
-            for item in opt['b']:
-                msg += f"- {item['role']}: {item['p'].name} ({item['p'].rank_str}) → {int(item['base'])} + ({int(item['penalty'])}) = **{int(item['effective'])}**\n"
-            msg += f"\n**Team 2 Total: {int(opt['total_b'])}**\n"
-
-            msg += "\n---\n" if i < len(top_3) - 1 else ""
-
-        url = (
-            f"https://discord.com/api/v10/webhooks/{app_id}/{token}/messages/@original"
-        )
+        url = f"https://discord.com/api/v10/webhooks/{app_id}/{token}/messages/@original"
         requests.patch(url, json={"content": msg})
 
     except Exception as e:
