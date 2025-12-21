@@ -177,20 +177,24 @@ def run(interaction_data, app_id, token):
         # Because every entry is now a unique personnel split,
         # the top 3 are guaranteed to have different people on each team.
         top_3 = all_matchups[:2]
-
         emojis = ["⚔️", "🛡️", "🏹"]
-        msg = "# 📖 UNIQUE TEAM OPTIONS\n"
+        msg = "# 📖 TEAM ASSIGNMENTS\n"
         for i, opt in enumerate(top_3):
-            msg += f"## {emojis[i]} OPTION {i+1} (MMR Gap: {int(opt['gap'])})\n"
-            for label, team, total in [
-                ("Team A", opt["a"], opt["total_a"]),
-                ("Team B", opt["b"], opt["total_b"]),
-            ]:
-                msg += f"**{label}** (Total: {int(total)})\n"
-                for item in team:
-                    msg += f"- {item['role']}: {item['p'].name} ({item['p'].rank_str}) → {int(item['base'])} + ({int(item['penalty'])}) = **{int(item['effective'])}**\n"
-                msg += "\n"
-            msg += "---\n"
+            msg += f"## {emojis[i]} Option {i+1} **Gap: {int(opt['gap'])}**\n"
+
+            # Team A Section
+            msg += "**Team 1**\n"
+            for item in opt['a']:
+                msg += f"- {item['role']}: {item['p'].name} ({item['p'].rank_str}) → {int(item['base'])} + ({int(item['penalty'])}) = **{int(item['effective'])}**\n"
+            msg += f"\n**Team 1 Total: {int(opt['total_a'])}**\n\n"
+
+            # Team B Section
+            msg += "**Team 2**\n"
+            for item in opt['b']:
+                msg += f"- {item['role']}: {item['p'].name} ({item['p'].rank_str}) → {int(item['base'])} + ({int(item['penalty'])}) = **{int(item['effective'])}**\n"
+            msg += f"\n**Team 2 Total: {int(opt['total_b'])}**\n"
+
+            msg += "\n---\n" if i < len(top_3) - 1 else ""
 
         url = (
             f"https://discord.com/api/v10/webhooks/{app_id}/{token}/messages/@original"
