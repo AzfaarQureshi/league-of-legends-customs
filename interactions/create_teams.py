@@ -176,7 +176,7 @@ def run(interaction_data, app_id, token):
 
         # Because every entry is now a unique personnel split,
         # the top 3 are guaranteed to have different people on each team.
-        top_3 = all_matchups[:3]
+        top_3 = all_matchups[:2]
 
         emojis = ["⚔️", "🛡️", "🏹"]
         msg = "# 📖 UNIQUE TEAM OPTIONS\n"
@@ -188,9 +188,7 @@ def run(interaction_data, app_id, token):
             ]:
                 msg += f"**{label}** (Total: {int(total)})\n"
                 for item in team:
-                    msg += (
-                        f"- {item['role']}: {item['p'].name} ({item['p'].rank_str})\n"
-                    )
+                    msg += f"- {item['role']}: {item['p'].name} ({item['p'].rank_str}) → {int(item['base'])} + ({int(item['penalty'])}) = **{int(item['effective'])}**\n"
                 msg += "\n"
             msg += "---\n"
 
