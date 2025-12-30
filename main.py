@@ -8,6 +8,7 @@ from discord_interactions import (
     InteractionResponseType,
 )
 import interactions.create_teams as create_teams
+import interactions.create_teams_v2 as create_teams_v2
 
 PUBLIC_KEY = os.getenv("DISCORD_PUBLIC_KEY")
 app = Flask(__name__)
@@ -33,7 +34,7 @@ def interactions():
 
             # 2. Spin up background thread for logic
             thread = threading.Thread(
-                target=create_teams.run, args=(data, application_id, token)
+                target=create_teams_v2.run, args=(data, application_id, token)
             )
             thread.start()
 
