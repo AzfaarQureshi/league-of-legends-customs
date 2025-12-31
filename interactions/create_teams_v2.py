@@ -25,14 +25,10 @@ RANK_MMR_DEFAULTS = {
 }
 
 DIVISION_OFFSET = {
-    "1": 300,
-    "2": 200,
-    "3": 100,
+    "1": 375,
+    "2": 250,
+    "3": 125,
     "4": 0,
-    "I": 300,
-    "II": 200,
-    "III": 100,
-    "IV": 0,
 }
 
 # Role penalties for seeding new players
