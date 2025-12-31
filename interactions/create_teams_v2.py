@@ -234,7 +234,7 @@ def format_output(team1_assignment, team2_assignment, team1_total, team2_total, 
     """Format the team assignment output with specific role ordering"""
     
     # 1. Define the desired order
-    role_order = ["TOP", "JG", "MID", "ADC", "SUPPORT"]
+    role_order = ["TOP", "JUNGLE", "MID", "ADC", "SUPPORT"]
     
     # 2. Create a helper function to determine the sorting priority
     # We use .index() to find the position of the role in our list
