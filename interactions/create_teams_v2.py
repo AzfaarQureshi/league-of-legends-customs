@@ -2,6 +2,8 @@ import json
 import requests
 import itertools
 from google.cloud import firestore
+from scipy.optimize import linear_sum_assignment
+import numpy as np
 
 try:
     db = firestore.Client()
@@ -113,95 +115,111 @@ def load_roster(roster_json):
     return players
 
 
-def generate_team_assignments(players):
-    """Generate all possible team and role assignments"""
-    # Split into 2 teams of 5
-    for team1_indices in itertools.combinations(range(10), 5):
-        team1 = [players[i] for i in team1_indices]
-        team2 = [players[i] for i in range(10) if i not in team1_indices]
-
-        # Generate all role assignments for each team
-        for team1_roles in itertools.permutations(ROLES):
-            for team2_roles in itertools.permutations(ROLES):
-                yield (team1, team1_roles, team2, team2_roles)
-
-
-def evaluate_assignment(team1, team1_roles, team2, team2_roles):
+def assign_roles_optimally(team):
     """
-    Evaluate a team assignment.
-    Returns: (is_valid, mmr_delta, team1_total, team2_total)
+    Use Hungarian algorithm to assign roles to maximize total MMR.
+    Returns: (role_assignment, total_mmr, offrole_count)
     """
-    team1_offroles = 0
-    team2_offroles = 0
-    team1_total = 0
-    team2_total = 0
+    # Create cost matrix (negative MMR since we want to maximize)
+    cost_matrix = np.zeros((5, 5))
 
-    # Calculate Team 1
-    for player, role in zip(team1, team1_roles):
+    for i, player in enumerate(team):
+        for j, role in enumerate(ROLES):
+            cost_matrix[i][j] = -player.mmr_map[role]
+
+    # Solve assignment problem
+    row_ind, col_ind = linear_sum_assignment(cost_matrix)
+
+    # Build result
+    role_assignment = []
+    total_mmr = 0
+    offrole_count = 0
+
+    for player_idx, role_idx in zip(row_ind, col_ind):
+        player = team[player_idx]
+        role = ROLES[role_idx]
         mmr = player.mmr_map[role]
-        team1_total += mmr
+
+        role_assignment.append((player, role, mmr))
+        total_mmr += mmr
         if player.is_offrole(role):
-            team1_offroles += 1
+            offrole_count += 1
 
-    # Calculate Team 2
-    for player, role in zip(team2, team2_roles):
-        mmr = player.mmr_map[role]
-        team2_total += mmr
-        if player.is_offrole(role):
-            team2_offroles += 1
-
-    # Check constraints
-    if team1_offroles > 2 or team2_offroles > 2:
-        return (False, float("inf"), 0, 0)
-
-    if team1_offroles != team2_offroles:
-        return (False, float("inf"), 0, 0)
-
-    mmr_delta = abs(team1_total - team2_total)
-    return (True, mmr_delta, team1_total, team2_total)
+    return role_assignment, total_mmr, offrole_count
 
 
 def find_best_teams(players):
-    """Find the best balanced team assignment"""
+    """Find the best balanced team assignment using optimized search"""
     best_assignment = None
     best_delta = float("inf")
     best_totals = (0, 0)
 
     checked = 0
-    for team1, team1_roles, team2, team2_roles in generate_team_assignments(players):
-        is_valid, delta, t1_total, t2_total = evaluate_assignment(
-            team1, team1_roles, team2, team2_roles
-        )
+    valid_found = 0
 
-        if is_valid and delta < best_delta:
-            best_delta = delta
-            best_assignment = (team1, team1_roles, team2, team2_roles)
-            best_totals = (t1_total, t2_total)
+    # Sort team splits to try balanced splits first (by total MMR)
+    player_mmrs = [p.best_mmr for p in players]
+    total_mmr = sum(player_mmrs)
+    target_per_team = total_mmr / 2
+
+    # Generate and sort team splits by how close they are to 50/50 split
+    team_splits = []
+    for team1_indices in itertools.combinations(range(10), 5):
+        team1_mmr = sum(player_mmrs[i] for i in team1_indices)
+        deviation = abs(team1_mmr - target_per_team)
+        team_splits.append((deviation, team1_indices))
+
+    team_splits.sort()  # Try most balanced splits first
+
+    # Only iterate through team splits (252 combinations)
+    for deviation, team1_indices in team_splits:
+        team1 = [players[i] for i in team1_indices]
+        team2 = [players[i] for i in range(10) if i not in team1_indices]
+
+        # Use Hungarian algorithm to find optimal role assignment for each team
+        t1_assignment, t1_total, t1_offroles = assign_roles_optimally(team1)
+        t2_assignment, t2_total, t2_offroles = assign_roles_optimally(team2)
 
         checked += 1
-        if checked % 10000 == 0:
-            print(f"Checked {checked} assignments...")
 
-    print(f"Total assignments checked: {checked}")
+        # Check constraints
+        if t1_offroles > 2 or t2_offroles > 2 or t1_offroles != t2_offroles:
+            continue
+
+        valid_found += 1
+        delta = abs(t1_total - t2_total)
+
+        if delta < best_delta:
+            best_delta = delta
+            best_assignment = (t1_assignment, t2_assignment)
+            best_totals = (t1_total, t2_total)
+            print(
+                f"New best found! Delta: {delta}, Offroles: {t1_offroles} per team, Checked: {checked}"
+            )
+
+            # Early exit if within 100 MMR
+            if delta <= 100:
+                print(f"Found excellent match within 100 MMR! Stopping search.")
+                break
+
+    print(f"Total team splits checked: {checked}")
+    print(f"Valid assignments found: {valid_found}")
+
     return best_assignment, best_delta, best_totals
 
 
-def format_output(
-    team1, team1_roles, team2, team2_roles, team1_total, team2_total, gap
-):
+def format_output(team1_assignment, team2_assignment, team1_total, team2_total, gap):
     """Format the team assignment output"""
     output = "## TEAM ASSIGNMENTS\n\n**Team 1**\n"
 
-    for player, role in zip(team1, team1_roles):
-        mmr = player.mmr_map[role]
+    for player, role, mmr in team1_assignment:
         rank_str = mmr_to_string(mmr)
         output += f"- {role}: {player.name} ({mmr} → {rank_str})\n"
 
     output += f"\n**Team 1 Total: {team1_total:,}**\n\n"
     output += "**Team 2**\n"
 
-    for player, role in zip(team2, team2_roles):
-        mmr = player.mmr_map[role]
+    for player, role, mmr in team2_assignment:
         rank_str = mmr_to_string(mmr)
         output += f"- {role}: {player.name} ({mmr} → {rank_str})\n"
 
@@ -225,20 +243,22 @@ def run(interaction_data, app_id, token):
         if len(players) != 10:
             raise ValueError("Roster must contain exactly 10 players.")
 
+        print("Finding optimal team assignment...")
         # Find best team assignment
         assignment, gap, totals = find_best_teams(players)
 
         if assignment is None:
             raise ValueError("Could not find valid team assignment with constraints.")
 
-        team1, team1_roles, team2, team2_roles = assignment
+        team1_assignment, team2_assignment = assignment
         team1_total, team2_total = totals
 
         # Format output
         output = format_output(
-            team1, team1_roles, team2, team2_roles, team1_total, team2_total, gap
+            team1_assignment, team2_assignment, team1_total, team2_total, gap
         )
 
+        # Send response to Discord
         requests.patch(
             f"https://discord.com/api/v10/webhooks/{app_id}/{token}/messages/@original",
             json={"content": output},
@@ -247,6 +267,9 @@ def run(interaction_data, app_id, token):
     except Exception as e:
         error_msg = f"❌ Error: {str(e)}"
         print(error_msg)
+        import traceback
+
+        traceback.print_exc()
         requests.patch(
             f"https://discord.com/api/v10/webhooks/{app_id}/{token}/messages/@original",
             json={"content": error_msg},
