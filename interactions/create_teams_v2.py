@@ -24,7 +24,16 @@ RANK_MMR_DEFAULTS = {
     "CHALLENGER": 4500,
 }
 
-DIVISION_OFFSET = {"1": 300, "2": 200, "3": 100, "4": 0}
+DIVISION_OFFSET = {
+    "1": 300,
+    "2": 200,
+    "3": 100,
+    "4": 0,
+    "I": 300,
+    "II": 200,
+    "III": 100,
+    "IV": 0,
+}
 
 # Role penalties for seeding new players
 ROLE_PENALTIES = {
@@ -88,13 +97,13 @@ def load_roster(roster_json):
 
             base_mmr = RANK_MMR_DEFAULTS.get(
                 rank, RANK_MMR_DEFAULTS["SILVER"]
-            ) + DIVISION_OFFSET.get(division, 0)
+            ) + DIVISION_OFFSET.get(division, 100)
 
             seed_mmr = {}
             for role in ROLES:
                 if role == primary:
                     penalty = ROLE_PENALTIES["PRIMARY"]
-                elif role == secondary:
+                elif role == secondary and secondary.lower() != "fill":
                     penalty = ROLE_PENALTIES["SECONDARY"]
                 else:
                     penalty = ROLE_PENALTIES["OFFROLE"]
@@ -118,14 +127,23 @@ def load_roster(roster_json):
 def assign_roles_optimally(team):
     """
     Use Hungarian algorithm to assign roles to maximize total MMR.
+    Favors primary roles to improve role satisfaction.
     Returns: (role_assignment, total_mmr, offrole_count)
     """
     # Create cost matrix (negative MMR since we want to maximize)
     cost_matrix = np.zeros((5, 5))
+    PRIMARY_BONUS = 300  # Preference for primary roles
+    SECONDARY_BONUS = 100  # Slight preference for secondary roles
 
     for i, player in enumerate(team):
         for j, role in enumerate(ROLES):
-            cost_matrix[i][j] = -player.mmr_map[role]
+            mmr_value = player.mmr_map[role]
+            # Add bonus for role preferences
+            if role == player.primary:
+                mmr_value += PRIMARY_BONUS
+            elif role == player.secondary:
+                mmr_value += SECONDARY_BONUS
+            cost_matrix[i][j] = -mmr_value
 
     # Solve assignment problem
     row_ind, col_ind = linear_sum_assignment(cost_matrix)
@@ -153,6 +171,7 @@ def find_best_teams(players):
     best_assignment = None
     best_delta = float("inf")
     best_totals = (0, 0)
+    best_offrole_diff = float("inf")
 
     checked = 0
     valid_found = 0
@@ -182,24 +201,31 @@ def find_best_teams(players):
 
         checked += 1
 
-        # Check constraints
-        if t1_offroles > 2 or t2_offroles > 2 or t1_offroles != t2_offroles:
-            continue
-
-        valid_found += 1
         delta = abs(t1_total - t2_total)
+        offrole_diff = abs(t1_offroles - t2_offroles)
 
-        if delta < best_delta:
+        # Prefer assignments with similar offrole counts, then minimize MMR delta
+        is_better = False
+        if offrole_diff < best_offrole_diff:
+            is_better = True
+        elif offrole_diff == best_offrole_diff and delta < best_delta:
+            is_better = True
+
+        if is_better:
+            valid_found += 1
             best_delta = delta
+            best_offrole_diff = offrole_diff
             best_assignment = (t1_assignment, t2_assignment)
             best_totals = (t1_total, t2_total)
             print(
-                f"New best found! Delta: {delta}, Offroles: {t1_offroles} per team, Checked: {checked}"
+                f"New best! Delta: {delta}, Offroles: T1={t1_offroles} T2={t2_offroles}, Checked: {checked}"
             )
 
-            # Early exit if within 100 MMR
-            if delta <= 100:
-                print(f"Found excellent match within 100 MMR! Stopping search.")
+            # Early exit if within 100 MMR and equal offroles
+            if delta <= 100 and offrole_diff == 0:
+                print(
+                    f"Found excellent match within 100 MMR with equal offroles! Stopping search."
+                )
                 break
 
     print(f"Total team splits checked: {checked}")
