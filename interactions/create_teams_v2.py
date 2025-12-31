@@ -100,11 +100,18 @@ def load_roster(roster_json):
             ) + DIVISION_OFFSET.get(division, 100)
 
             seed_mmr = {}
+            # Normalize role names and handle Fill
+            primary_normalized = primary if primary in ROLES else None
+            secondary_normalized = secondary if secondary in ROLES else None
+
             for role in ROLES:
-                if role == primary:
+                if role == primary_normalized:
                     penalty = ROLE_PENALTIES["PRIMARY"]
-                elif role == secondary and secondary.lower() != "fill":
+                elif role == secondary_normalized:
                     penalty = ROLE_PENALTIES["SECONDARY"]
+                elif primary_normalized is None or secondary_normalized is None:
+                    # If primary or secondary is Fill, no penalty for any role
+                    penalty = 0
                 else:
                     penalty = ROLE_PENALTIES["OFFROLE"]
                 seed_mmr[role] = base_mmr + penalty
