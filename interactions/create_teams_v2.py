@@ -230,19 +230,33 @@ def find_best_teams(players):
 
     return best_assignment, best_delta, best_totals
 
-
 def format_output(team1_assignment, team2_assignment, team1_total, team2_total, gap):
-    """Format the team assignment output"""
+    """Format the team assignment output with specific role ordering"""
+    
+    # 1. Define the desired order
+    role_order = ["TOP", "JG", "MID", "ADC", "SUPPORT"]
+    
+    # 2. Create a helper function to determine the sorting priority
+    # We use .index() to find the position of the role in our list
+    def sort_by_role(entry):
+        role = entry[1]
+        return role_order.index(role) if role in role_order else 99
+
+    # 3. Sort both teams based on the role order
+    team1_sorted = sorted(team1_assignment, key=sort_by_role)
+    team2_sorted = sorted(team2_assignment, key=sort_by_role)
+
     output = "## TEAM ASSIGNMENTS\n\n**Team 1**\n"
 
-    for player, role, mmr in team1_assignment:
+    # Iterate through the sorted lists instead of the raw inputs
+    for player, role, mmr in team1_sorted:
         rank_str = mmr_to_string(mmr)
         output += f"- {role}: {player.name} ({mmr} → {rank_str})\n"
 
     output += f"\n**Team 1 Total: {team1_total:,}**\n\n"
     output += "**Team 2**\n"
 
-    for player, role, mmr in team2_assignment:
+    for player, role, mmr in team2_sorted:
         rank_str = mmr_to_string(mmr)
         output += f"- {role}: {player.name} ({mmr} → {rank_str})\n"
 
