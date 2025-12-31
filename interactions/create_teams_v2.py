@@ -38,7 +38,7 @@ ROLE_PENALTIES = {
     "OFFROLE": -500,
 }
 
-ROLES = ["Top", "Jungle", "Mid", "ADC", "Support"]
+ROLES = ["TOP", "JUNGLE", "MID", "ADC", "SUPPORT"]
 
 
 class Player:
@@ -75,8 +75,8 @@ def load_roster(roster_json):
     players = []
     for p in roster_json:
         name = p.get("ign")
-        primary = p.get("primary role", "Fill")
-        secondary = p.get("secondary role", "Fill")
+        primary = p.get("primary role", "Fill").upper()
+        secondary = p.get("secondary role", "Fill").upper()
 
         doc_ref = db.collection("players").document(name)
         doc = doc_ref.get()
@@ -96,18 +96,12 @@ def load_roster(roster_json):
             ) + DIVISION_OFFSET.get(division, 100)
 
             seed_mmr = {}
-            # Normalize role names and handle Fill
-            primary_normalized = primary if primary in ROLES else None
-            secondary_normalized = secondary if secondary in ROLES else None
 
             for role in ROLES:
-                if role == primary_normalized:
-                    penalty = ROLE_PENALTIES["PRIMARY"]
-                elif role == secondary_normalized:
-                    penalty = ROLE_PENALTIES["SECONDARY"]
-                elif primary_normalized is None or secondary_normalized is None:
-                    # If primary or secondary is Fill, no penalty for any role
+                if role == primary or (primary == "FILL" or secondary == "FILL"):
                     penalty = 0
+                elif role == secondary:
+                    penalty = ROLE_PENALTIES["SECONDARY"]
                 else:
                     penalty = ROLE_PENALTIES["OFFROLE"]
                 seed_mmr[role] = base_mmr + penalty
