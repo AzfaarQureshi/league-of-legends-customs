@@ -258,11 +258,21 @@ def calculate_mmr_changes(winning_team, losing_team):
     mmr_changes = {}
     role_swaps = []
 
-    # Get current MMRs for all players
+    # Get current MMRs for all players in a single batch request
     player_mmrs = {}
     player_data = {}
-    for player in winning_team + losing_team:
-        doc = db.collection("players").document(player["ign"]).get()
+
+    # Collect all player document references
+    all_players = winning_team + losing_team
+    player_refs = [
+        db.collection("players").document(player["ign"]) for player in all_players
+    ]
+
+    # Fetch all documents in a single round-trip
+    player_docs = db.get_all(player_refs)
+
+    # Process the fetched documents
+    for player, doc in zip(all_players, player_docs):
         if doc.exists:
             data = doc.to_dict()
             player_data[player["ign"]] = data
