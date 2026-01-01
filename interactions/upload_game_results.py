@@ -2,9 +2,11 @@ import json
 import requests
 import os
 import base64
+import hashlib
 from google.cloud import firestore
 import google.generativeai as genai
 from fuzzywuzzy import fuzz, process
+from datetime import datetime
 
 try:
     db = firestore.Client()
@@ -20,6 +22,17 @@ ROLE_ICONS_MAP = {
     "ADC": "ADC",
     "SUPPORT": "Support",
 }
+
+
+def generate_confirmation_id(winning_team, losing_team):
+    """Generate a unique, stable ID for this game result based on team composition"""
+    # Sort players by name to ensure consistency
+    team1_str = ",".join(sorted([p["ign"] + p["role"] for p in winning_team]))
+    team2_str = ",".join(sorted([p["ign"] + p["role"] for p in losing_team]))
+
+    # Create hash of the game composition + timestamp (to prevent collisions)
+    unique_str = f"{team1_str}|{team2_str}|{datetime.utcnow().isoformat()}"
+    return hashlib.md5(unique_str.encode()).hexdigest()[:16]
 
 
 def get_all_player_names():
@@ -211,8 +224,8 @@ def format_confirmation_message(
     return message
 
 
-def create_confirmation_components():
-    """Create Discord button components for confirmation"""
+def create_confirmation_components(confirmation_id):
+    """Create Discord button components for confirmation with embedded ID"""
     return [
         {
             "type": 1,  # Action Row
@@ -221,13 +234,13 @@ def create_confirmation_components():
                     "type": 2,  # Button
                     "style": 3,  # Success (green)
                     "label": "✓ Confirm",
-                    "custom_id": "confirm_results",
+                    "custom_id": f"confirm_results:{confirmation_id}",
                 },
                 {
                     "type": 2,  # Button
                     "style": 4,  # Danger (red)
                     "label": "✗ Cancel",
-                    "custom_id": "cancel_results",
+                    "custom_id": f"cancel_results:{confirmation_id}",
                 },
             ],
         }
@@ -327,8 +340,6 @@ def commit_results_to_firestore(winning_team, losing_team, mmr_changes, role_swa
     Returns: success boolean
     """
     try:
-        from datetime import datetime
-
         game_id = db.collection("games").document().id
         timestamp = datetime.utcnow()
 
@@ -428,6 +439,9 @@ def run(interaction_data, app_id, token):
             )
             return
 
+        # Generate a stable confirmation ID
+        confirmation_id = generate_confirmation_id(winning_team, losing_team)
+
         # Store data temporarily for the confirmation callback
         confirmation_data = {
             "winning_team": winning_team,
@@ -435,17 +449,18 @@ def run(interaction_data, app_id, token):
             "mmr_changes": mmr_changes,
             "role_swaps": role_swaps,
             "name_corrections": name_corrections,
+            "timestamp": datetime.utcnow(),
         }
 
-        # Store in Firestore temporarily
-        temp_ref = db.collection("pending_confirmations").document(token)
+        # Store in Firestore with the stable ID (expires after 1 hour)
+        temp_ref = db.collection("pending_confirmations").document(confirmation_id)
         temp_ref.set(confirmation_data)
 
         # Format confirmation message (shows name corrections, role swaps if any)
         message = format_confirmation_message(
             winning_team, losing_team, role_swaps, name_corrections
         )
-        components = create_confirmation_components()
+        components = create_confirmation_components(confirmation_id)
 
         # Send confirmation message
         requests.patch(
@@ -469,19 +484,21 @@ def handle_confirmation(interaction_data, app_id, token):
     """Handle confirmation button clicks"""
     try:
         custom_id = interaction_data.get("data", {}).get("custom_id")
-        message = interaction_data.get("message", {})
 
-        # Get the original interaction token from message
-        # Note: We need to pass this through somehow - using message content hash or interaction token
-        original_token = (
-            interaction_data.get("message", {})
-            .get("interaction", {})
-            .get("token", token)
-        )
+        # Extract the confirmation ID from the custom_id
+        # Format is either "confirm_results:ID" or "cancel_results:ID"
+        if ":" not in custom_id:
+            requests.patch(
+                f"https://discord.com/api/v10/webhooks/{app_id}/{token}/messages/@original",
+                json={"content": "❌ Error: Invalid button data.", "components": []},
+            )
+            return
 
-        if custom_id == "cancel_results":
+        action, confirmation_id = custom_id.split(":", 1)
+
+        if action == "cancel_results":
             # Delete pending confirmation
-            db.collection("pending_confirmations").document(original_token).delete()
+            db.collection("pending_confirmations").document(confirmation_id).delete()
 
             # Update message
             requests.patch(
@@ -490,16 +507,16 @@ def handle_confirmation(interaction_data, app_id, token):
             )
             return
 
-        elif custom_id == "confirm_results":
-            # Retrieve pending data
-            temp_ref = db.collection("pending_confirmations").document(original_token)
+        elif action == "confirm_results":
+            # Retrieve pending data using the confirmation ID
+            temp_ref = db.collection("pending_confirmations").document(confirmation_id)
             temp_doc = temp_ref.get()
 
             if not temp_doc.exists:
                 requests.patch(
                     f"https://discord.com/api/v10/webhooks/{app_id}/{token}/messages/@original",
                     json={
-                        "content": "❌ Error: Confirmation data expired.",
+                        "content": "❌ Error: Confirmation data not found or expired.",
                         "components": [],
                     },
                 )
